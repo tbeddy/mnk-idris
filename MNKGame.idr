@@ -1,6 +1,7 @@
 module MNKGame
 
 import Data.Vect
+import Data.String
 
 %default total
 
@@ -171,64 +172,72 @@ nextPiece O = X
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
+lteMNK : (m, n, k : Nat) -> Maybe (LTE k m, LTE k n)
+lteMNK m n k = case isLTE k m of
+                    (No contra) => Nothing
+                    (Yes prfm) => case isLTE k n of
+                                       (No contra) => Nothing
+                                       (Yes prfn) => Just (prfm, prfn)
+
 
 ------ IO ------
 
 partial
-gameLoop : (k : Nat) -> Board m n -> Piece -> IO ()
-gameLoop {m} {n} k brd pce =
-  do putStr "x: "
-     x <- getLine
-     putStr "y: "
-     y <- getLine
-     let xval = the Integer (cast x)
-     let yval = the Integer (cast y)
-     case integerToFin xval m of
-          Nothing => do putStrLn "Try again"
-                        gameLoop k brd pce
-          (Just x') =>
-            case integerToFin yval n of
-                 Nothing => do putStrLn "Try again"
-                               gameLoop k brd pce
-                 (Just y') =>
-                   case addPiece pce x' y' brd of
-                        Nothing => do putStrLn "Space occupied"
-                                      gameLoop k brd pce
-                        (Just newbrd) =>
-                          case isLTE k n of 
-                               (Yes prfn) =>
-                                 case isLTE k m of
-                                      (Yes prfm) =>
-                                        case (anyWinningLines
-                                               {b = m - k} {a = n - k} k
-                                               (plusMinusProof prfn
-                                                 (map (plusMinusProof prfm) newbrd))) of
-                                             Nothing =>
-                                               if isDraw newbrd
-                                                  then putStrLn "Draw"
-                                                  else do putStrLn (showBoard newbrd)
-                                                          gameLoop k newbrd (nextPiece pce)
-                                             (Just winpce) =>
-                                               do putStrLn (showBoard newbrd)
-                                                  putStrLn ((show winpce) ++ " wins!")
-                                      (No contra) => putStrLn "Darn"
-                               (No contra) => putStrLn "Darn"
+readVal : String -> IO Nat
+readVal str =
+  do putStr (str ++ ": ")
+     testval <- getLine
+     case parsePositive testval of
+          Nothing => do putStrLn "Invalid value"
+                        readVal str
+          (Just val) => pure (cast val)
+
+partial
+readInput : String -> (bound : Nat) -> IO (Fin bound)
+readInput str bound =
+  do testval <- readVal str
+     case natToFin testval bound of
+          Nothing => do putStrLn "Out of range"
+                        readInput str bound
+          (Just val) => pure val
+
+partial
+gameLoop : (k : Nat) -> Board m n -> LTE k m -> LTE k n -> Piece -> IO ()
+gameLoop {m} {n} k brd prfm prfn pce =
+  do putStrLn (show pce ++ "'s turn")
+     x <- readInput "x" m
+     y <- readInput "y" n
+     case addPiece pce x y brd of
+          Nothing => do putStrLn "That space is occupied"
+                        gameLoop k brd prfm prfn pce
+          (Just newbrd) =>
+            case (anyWinningLines
+                   {b = m - k} {a = n - k} k
+                   (plusMinusProof prfn
+                     (map (plusMinusProof prfm) newbrd))) of
+                 Nothing =>
+                   if isDraw newbrd
+                      then putStrLn "Draw"
+                      else do putStrLn (showBoard newbrd)
+                              gameLoop k newbrd prfm prfn (nextPiece pce)
+                 (Just winpce) =>
+                   do putStrLn (showBoard newbrd)
+                      putStrLn ("Winner: " ++ (show winpce))
+                      putStrLn ("Loser:  " ++ (show (nextPiece winpce)))
 
 partial
 enterValues : IO ()
 enterValues =
-  do putStr "Enter the m value: "
-     m <- getLine
-     putStr "Enter the n value: "
-     n <- getLine
-     putStr "Enter the k value: "
-     k <- getLine
-     if (max m n) < k
-        then do putStrLn "k should not be larger than both m and n"
-                enterValues
-        else do let firstboard = (emptyBoard (cast m) (cast n))
-                putStrLn (showBoard firstboard)
-                gameLoop (cast k) firstboard X
+  do putStrLn "Individually enter the m,n,k values"
+     m <- readVal "m"
+     n <- readVal "n"
+     k <- readVal "k"
+     case lteMNK m n k of
+          Nothing => do putStrLn "k should not be larger than m or n"
+                        enterValues
+          (Just (prfm, prfn)) => do let firstboard = (emptyBoard m n)
+                                    putStrLn (showBoard firstboard)
+                                    gameLoop k firstboard prfm prfn X
 
 partial
 main : IO ()
