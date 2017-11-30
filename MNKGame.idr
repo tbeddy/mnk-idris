@@ -109,28 +109,28 @@ deleteRow = deleteAt
 deleteCol : Fin (S m) -> Board (S m) n -> Board m n
 deleteCol f = map (deleteAt f)
 
-kSquare : (k : Nat) -> Board (k + b) (k + a) -> Board k k
+kSquare : (k : Nat) -> Board (k + nrest) (k + mrest) -> Board k k
 kSquare k xs = map (take k) $ take k xs
 
-kSquareList: (k : Nat) -> Board (k + b) (k + a) -> List (Board k k)
-kSquareList {a = Z}     {b = Z}     k xs = [(kSquare k xs)]
-kSquareList {a = Z}     {b = (S j)} k xs = (kSquare k xs) ::
-                                           kSquareList {a = Z} {b = j}
-                                             k (deleteCol 0 (map plusSProof xs))
-kSquareList {a = (S i)} {b = Z}     k xs = (kSquare k xs) ::
-                                           kSquareList {a = i} {b = Z}
-                                             k (deleteRow 0 (plusSProof xs))
-kSquareList {a = (S i)} {b = (S j)} k xs = (kSquare k xs) ::
-                                           kSquareList {a = i} {b = (S j)}
-                                             k (deleteRow 0 (plusSProof xs)) ++
-                                           kSquareList {a = (S i)} {b = j}
-                                             k (deleteCol 0 (map plusSProof xs))
+kSquareList: (k : Nat) -> Board (k + nrest) (k + mrest) -> List (Board k k)
+kSquareList {mrest = Z}     {nrest = Z}     k xs = [(kSquare k xs)]
+kSquareList {mrest = Z}     {nrest = (S j)} k xs = (kSquare k xs) ::
+                                                   kSquareList {mrest = Z} {nrest = j}
+                                                     k (deleteCol 0 (map plusSProof xs))
+kSquareList {mrest = (S i)} {nrest = Z}     k xs = (kSquare k xs) ::
+                                                   kSquareList {mrest = i} {nrest = Z}
+                                                     k (deleteRow 0 (plusSProof xs))
+kSquareList {mrest = (S i)} {nrest = (S j)} k xs = (kSquare k xs) ::
+                                                   kSquareList {mrest = i} {nrest = (S j)}
+                                                     k (deleteRow 0 (plusSProof xs)) ++
+                                                   kSquareList {mrest = (S i)} {nrest = j}
+                                                     k (deleteCol 0 (map plusSProof xs))
 
 diagsRowsCols : Board k k -> List (Row k)
 diagsRowsCols xs = diag xs :: diag (flipHorizontal xs) ::
                    toList xs ++ toList (transpose xs)
 
-allLines : (k : Nat) -> Board (k + b) (k + a) -> List (Row k)
+allLines : (k : Nat) -> Board (k + nrest) (k + mrest) -> List (Row k)
 allLines k xs = let front = map diagsRowsCols (kSquareList k xs) in
                     flattener front
   where
@@ -139,7 +139,7 @@ allLines k xs = let front = map diagsRowsCols (kSquareList k xs) in
     flattener (x :: xs) = x ++ flattener xs
 
 ||| If there any game winning lines, return that line's piece
-anyWinningLines : (k : Nat) -> Board (k + b) (k + a) -> Maybe Piece
+anyWinningLines : (k : Nat) -> Board (k + nrest) (k + mrest) -> Maybe Piece
 anyWinningLines Z xs = Nothing
 anyWinningLines (S j) xs = checkLines (allLines (S j) xs)
   where
@@ -212,7 +212,7 @@ gameLoop {m} {n} k brd prfm prfn pce =
                         gameLoop k brd prfm prfn pce
           (Just newbrd) =>
             case (anyWinningLines
-                   {b = m - k} {a = n - k} k
+                   {mrest = n - k} {nrest = m - k} k
                    (plusMinusProof prfn
                      (map (plusMinusProof prfm) newbrd))) of
                  Nothing =>
