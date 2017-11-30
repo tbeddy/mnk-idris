@@ -131,12 +131,7 @@ diagsRowsCols xs = diag xs :: diag (flipHorizontal xs) ::
                    toList xs ++ toList (transpose xs)
 
 allLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Row k)
-allLines k xs = let front = map diagsRowsCols (kSquareList k xs) in
-                    flattener front
-  where
-    flattener : List (List (Row k)) -> List (Row k)
-    flattener [] = []
-    flattener (x :: xs) = x ++ flattener xs
+allLines k xs = join $ map diagsRowsCols (kSquareList k xs)
 
 ||| If there any game winning lines, return that line's piece
 anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Maybe Piece
