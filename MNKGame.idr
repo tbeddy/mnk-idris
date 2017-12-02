@@ -24,6 +24,34 @@ Row m = Vect m (Maybe Piece)
 Board : (m, n : Nat) -> Type
 Board m n = Vect n (Row m)
 
+record Rules where
+  constructor MkRules
+  misere : Bool
+  wild : Bool
+
+Show Rules where
+  show (MkRules False False) = "Rules: Normal"
+  show (MkRules misere wild)
+    = "Rules:" ++
+      (if misere then " Misere" else "") ++
+      (if wild then " Wild" else "")
+
+record Player where
+  constructor MkPlayer
+  name : String
+  pieces : Piece
+
+Show Player where
+  show (MkPlayer name pieces) = name
+
+record Game where
+  constructor MkGame
+  board : Board m n
+  k : Nat
+  rules : Rules
+  players : (Player, Player)
+  prfm : LTE k m
+  prfn : LTE k n
 
 ------ Display ------
 
@@ -193,28 +221,29 @@ readInput str bound =
           (Just val) => pure val
 
 partial
-gameLoop : (k : Nat) -> Board m n -> LTE k m -> LTE k n -> Piece -> IO ()
-gameLoop {m} {n} k brd prfm prfn pce =
-  do putStrLn (show pce ++ "'s turn")
+gameLoop : Game -> IO ()
+gameLoop currentState@(MkGame {m} {n} board k rules (thisPlayer, nextPlayer) prfm prfn) =
+  do putStrLn (show thisPlayer ++ "'s turn (" ++ show (pieces thisPlayer) ++ ")")
      x <- readInput "x" m
      y <- readInput "y" n
-     case addPiece pce x y brd of
+     case addPiece (pieces thisPlayer) x y board of
           Nothing => do putStrLn "That space is occupied"
-                        gameLoop k brd prfm prfn pce
+                        gameLoop currentState
           (Just newbrd) =>
             case (anyWinningLines
                    {mrest = m - k} {nrest = n - k} k
-                   (plusMinusProof prfn
-                     (map (plusMinusProof prfm) newbrd))) of
+                   (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))) of
                  Nothing =>
                    if isDraw newbrd
                       then putStrLn "Draw"
                       else do putStrLn (showBoard newbrd)
-                              gameLoop k newbrd prfm prfn (nextPiece pce)
+                              gameLoop (MkGame newbrd k rules
+                                               (nextPlayer, thisPlayer)
+                                               prfm prfn)
                  (Just winpce) =>
                    do putStrLn (showBoard newbrd)
-                      putStrLn ("Winner: " ++ (show winpce))
-                      putStrLn ("Loser:  " ++ (show (nextPiece winpce)))
+                      putStrLn ("Winner: " ++ (show thisPlayer))
+                      putStrLn ("Loser:  " ++ (show nextPlayer))
 
 partial
 enterValues : IO ()
@@ -224,11 +253,15 @@ enterValues =
      n <- readVal "n"
      k <- readVal "k"
      case lteMNK m n k of
-          Nothing => do putStrLn "k should not be larger than m or n"
-                        enterValues
-          (Just (prfm, prfn)) => do let firstboard = (emptyBoard m n)
-                                    putStrLn (showBoard firstboard)
-                                    gameLoop k firstboard prfm prfn X
+          Nothing =>
+            do putStrLn "k should not be larger than m or n"
+               enterValues
+          (Just (prfm, prfn)) =>
+            do let firstboard = (emptyBoard m n)
+               putStrLn (showBoard firstboard)
+               gameLoop (MkGame firstboard k (MkRules False False)
+                                ((MkPlayer "P1" X), (MkPlayer "P2" O))
+                                prfm prfn)
 
 partial
 main : IO ()
