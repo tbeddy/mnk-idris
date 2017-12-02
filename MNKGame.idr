@@ -5,7 +5,6 @@ import Data.String
 
 %default total
 
-
 ------ Types (and interfaces) ------
 
 data Piece = X | O
@@ -64,7 +63,6 @@ showBoard {m} brd = mLabelRow m ++ showBoardHelper 0 brd ++ mLabelRow m
     showBoardHelper a (x :: xs) = showNumLabel a ++ " " ++ showRow x ++ " " ++
                                   showNumLabel a ++ "\n" ++ showBoardHelper (a + 1) xs
 
-
 ------ Proofs (and associated rewriting functions) ------
 
 ||| Defined here: http://docs.idris-lang.org/en/latest/tutorial/theorems.html
@@ -84,7 +82,6 @@ plusMinusCancelOut (S right) (S left) (LTESucc x) = cong (plusMinusCancelOut rig
 
 plusMinusProof : LTE b a -> Vect a elem -> Vect (plus b (minus a b)) elem
 plusMinusProof {a} {b} prf xs = rewrite plusMinusCancelOut a b prf in xs
-
 
 ------ Gameplay functions ------
 
@@ -114,10 +111,10 @@ kSquare k xs = map (take k) $ take k xs
 
 kSquareList: (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Board k k)
 kSquareList {mrest = Z}     {nrest = Z}     k xs = [(kSquare k xs)]
-kSquareList {mrest = (S j)} {nrest = Z} k xs = (kSquare k xs) ::
+kSquareList {mrest = (S j)} {nrest = Z}     k xs = (kSquare k xs) ::
                                                    kSquareList {mrest = j} {nrest = Z}
                                                      k (deleteCol 0 (map plusSProof xs))
-kSquareList {mrest = Z}     {nrest = (S i)}     k xs = (kSquare k xs) ::
+kSquareList {mrest = Z}     {nrest = (S i)} k xs = (kSquare k xs) ::
                                                    kSquareList {mrest = Z} {nrest = i}
                                                      k (deleteRow 0 (plusSProof xs))
 kSquareList {mrest = (S j)} {nrest = (S i)} k xs = (kSquare k xs) ::
@@ -173,7 +170,6 @@ lteMNK m n k = case isLTE k m of
                     (Yes prfm) => case isLTE k n of
                                        (No contra) => Nothing
                                        (Yes prfn) => Just (prfm, prfn)
-
 
 ------ IO ------
 
