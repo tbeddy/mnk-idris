@@ -91,6 +91,10 @@ showBoard {m} brd = mLabelRow m ++ showBoardHelper 0 brd ++ mLabelRow m
     showBoardHelper a (x :: xs) = showNumLabel a ++ " " ++ showRow x ++ " " ++
                                   showNumLabel a ++ "\n" ++ showBoardHelper (a + 1) xs
 
+showGame : Game -> String
+showGame (MkGame board k rules players prfm prfn)
+  = show rules ++ "\n" ++ showBoard board
+
 ------ Proofs (and associated rewriting functions) ------
 
 ||| Defined here: http://docs.idris-lang.org/en/latest/tutorial/theorems.html
@@ -236,10 +240,11 @@ gameLoop currentState@(MkGame {m} {n} board k rules (thisPlayer, nextPlayer) prf
                  Nothing =>
                    if isDraw newbrd
                       then putStrLn "Draw"
-                      else do putStrLn (showBoard newbrd)
-                              gameLoop (MkGame newbrd k rules
-                                               (nextPlayer, thisPlayer)
-                                               prfm prfn)
+                      else do let newgamestate = (MkGame newbrd k rules
+                                                         (nextPlayer, thisPlayer)
+                                                         prfm prfn)
+                              putStrLn (showGame newgamestate)
+                              gameLoop newgamestate
                  (Just winpce) =>
                    do putStrLn (showBoard newbrd)
                       putStrLn ("Winner: " ++ (show thisPlayer))
@@ -257,11 +262,11 @@ enterValues =
             do putStrLn "k should not be larger than m or n"
                enterValues
           (Just (prfm, prfn)) =>
-            do let firstboard = (emptyBoard m n)
-               putStrLn (showBoard firstboard)
-               gameLoop (MkGame firstboard k (MkRules False False)
-                                ((MkPlayer "P1" X), (MkPlayer "P2" O))
-                                prfm prfn)
+            do let initialgame = (MkGame (emptyBoard m n) k (MkRules False False)
+                                         ((MkPlayer "P1" X), (MkPlayer "P2" O))
+                                         prfm prfn)
+               putStrLn (showGame initialgame)
+               gameLoop initialgame
 
 partial
 main : IO ()
