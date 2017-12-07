@@ -273,70 +273,129 @@ lteMNK m n k = case isLTE k m of
                                        (No contra) => Nothing
                                        (Yes prfn) => Just (prfm, prfn)
 
+------ Input parsing ------
+
+parsePrefix : (schema : Schema) -> String -> (m, n : Nat) ->
+              Maybe (SchemaType schema m n, String)
+parsePrefix SX input m n
+  = case span isDigit input of
+         ("", rest) => Nothing
+         (testnum, rest) =>
+           do testnat <- parsePositive {a = Nat} testnum
+              x <- natToFin testnat m
+              Just (x, ltrim rest)
+parsePrefix SY input m n
+  = case span isDigit input of
+         ("", rest) => Nothing
+         (testnum, rest) =>
+           do testnat <- parsePositive {a = Nat} testnum
+              y <- natToFin testnat n
+              Just (y, ltrim rest)
+parsePrefix SPiece input m n = maybePieceInput (unpack input)
+  where
+    maybePieceInput : List Char -> Maybe (Piece, String)
+    maybePieceInput ('X' :: rest) = Just (X, ltrim (pack rest))
+    maybePieceInput ('O' :: rest) = Just (O, ltrim (pack rest))
+    maybePieceInput _ = Nothing
+parsePrefix (left .+. right) input m n =
+  do (l_val, input') <- parsePrefix left input m n
+     (r_val, input'') <- parsePrefix right input' m n
+     Just ((l_val, r_val), input'')
+
+parseBySchema : (schema : Schema) -> String -> (m, n : Nat) ->
+                Maybe (SchemaType schema m n)
+parseBySchema schema input m n = case parsePrefix schema input m n of
+                                      (Just (res, "")) => Just res
+                                      (Just _) => Nothing
+                                      Nothing => Nothing
+
+parseSchema : List String -> Maybe Schema
+parseSchema ("X" :: xs)
+  = case xs of
+         [] => Just SX
+         _ => case parseSchema xs of
+                   Nothing => Nothing
+                   (Just xs_sch) => Just (SX .+. xs_sch)
+parseSchema ("Y" :: xs)
+  = case xs of
+         [] => Just SY
+         _ => case parseSchema xs of
+                   Nothing => Nothing
+                   (Just xs_sch) => Just (SY .+. xs_sch)
+parseSchema ("Piece" :: xs)
+  = case xs of
+         [] => Just SPiece
+         _ => case parseSchema xs of
+                   Nothing => Nothing
+                   (Just xs_sch) => Just (SPiece .+. xs_sch)
+parseSchema _ = Nothing
+
+parseRules : List String -> Vect 4 Bool
+parseRules xs = [elem "mis" xs,
+                 elem "wild" xs,
+                 elem "cf" xs,
+                 elem "oc" xs]
+
+parseNewGame : List String -> Maybe (Vect 3 Nat, Vect 4 Bool)
+parseNewGame xs = let (_ ** mnkvals) = catMaybes $ fromList $
+                                       map (parsePositive {a = Nat}) $ take 3 xs
+                      rules = drop 3 xs in
+                      case exactLength 3 mnkvals of
+                           Nothing => Nothing
+                           (Just mnkvals') => Just (mnkvals', parseRules rules)
+
 ------ IO ------
 
 partial
-readVal : String -> IO Nat
-readVal str =
-  do putStr (str ++ ": ")
-     testval <- getLine
-     case parsePositive testval of
-          Nothing => do putStrLn "Invalid value"
-                        readVal str
-          (Just val) => pure (cast val)
-
-partial
-readInput : String -> (bound : Nat) -> IO (Fin bound)
-readInput str bound =
-  do testval <- readVal str
-     case natToFin testval bound of
-          Nothing => do putStrLn "Out of range"
-                        readInput str bound
-          (Just val) => pure val
-
-partial
 gameLoop : Game -> IO ()
-gameLoop currentState@(MkGame {m} {n} board k rules (thisPlayer, nextPlayer) prfm prfn) =
-  do putStrLn (show thisPlayer ++ "'s turn (" ++ show (pieces thisPlayer) ++ ")")
-     x <- readInput "x" m
-     y <- readInput "y" n
-     case addPiece (pieces thisPlayer) x y board of
-          Nothing => do putStrLn "That space is occupied"
-                        gameLoop currentState
-          (Just newbrd) =>
-            case (anyWinningLines
-                   {mrest = m - k} {nrest = n - k} k
-                   (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))) of
-                 Nothing =>
-                   if isDraw newbrd
-                      then putStrLn "Draw"
-                      else do let newgamestate = (MkGame newbrd k rules
-                                                         (nextPlayer, thisPlayer)
-                                                         prfm prfn)
-                              putStrLn (showGame newgamestate)
-                              gameLoop newgamestate
-                 (Just winpce) =>
-                   do putStrLn (showBoard newbrd)
-                      putStrLn ("Winner: " ++ (show thisPlayer))
-                      putStrLn ("Loser:  " ++ (show nextPlayer))
+gameLoop st@(MkGame {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm prfn) =
+  do putStrLn ((show thisPlayer) ++ "'s turn")
+     putStr (show schema ++ ": ")
+     testinput <- getLine
+     case parseBySchema schema testinput m n of
+          Nothing => do putStrLn "Invalid input"
+                        gameLoop st
+          (Just validinput) =>
+            case addPiece validinput board thisPlayer of
+                 Nothing => do putStrLn "That space is occupied"
+                               gameLoop st
+                 (Just newbrd) =>
+                   case (anyWinningLines {mrest = m - k} {nrest = n - k}
+                          k (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))) of
+                        Nothing =>
+                          if isBoardFull newbrd
+                             then putStrLn $ fullBoardEnding $ orderchaos rules
+                             else do let newgamestate = (MkGame newbrd k rules schema
+                                                                (nextPlayer, thisPlayer)
+                                                                prfm prfn)
+                                     putStrLn (showGame newgamestate)
+                                     gameLoop newgamestate
+                        (Just winpce) =>
+                          do putStrLn (showBoard newbrd)
+                             putStrLn (winningLineEnding
+                                        thisPlayer nextPlayer
+                                        (misere rules) (orderchaos rules))
 
 partial
 enterValues : IO ()
 enterValues =
-  do putStrLn "Individually enter the m,n,k values"
-     m <- readVal "m"
-     n <- readVal "n"
-     k <- readVal "k"
-     case lteMNK m n k of
-          Nothing =>
-            do putStrLn "k should not be larger than m or n"
-               enterValues
-          (Just (prfm, prfn)) =>
-            do let initialgame = (MkGame (emptyBoard m n) k (MkRules False False)
-                                         ((MkPlayer "P1" X), (MkPlayer "P2" O))
-                                         prfm prfn)
-               putStrLn (showGame initialgame)
-               gameLoop initialgame
+  do putStr "Enter m,n,k values and any extra game modes: "
+     testvals <- getLine
+     case parseNewGame (words testvals) of
+          Nothing => do putStrLn "Invalid input"
+                        enterValues
+          (Just ([m, n, k], [mis, wild, cf, oc])) =>
+            case lteMNK m n k of
+                 Nothing => do putStrLn "k should not be larger than m or n"
+                               enterValues
+                 (Just (prfm, prfn)) =>
+                   do let initialgame = (MkGame (emptyBoard m n) k
+                                                (MkRules mis wild cf oc)
+                                                (createSchema wild cf)
+                                                (createPlayers wild oc)
+                                                prfm prfn)
+                      putStrLn (showGame initialgame)
+                      gameLoop initialgame
 
 partial
 main : IO ()
