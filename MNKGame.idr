@@ -5,6 +5,8 @@ import Data.String
 
 %default total
 
+infixr 5 .+.
+
 ------ Types (and interfaces) ------
 
 data Piece = X | O
@@ -48,11 +50,29 @@ record Player where
 Show Player where
   show (MkPlayer name pieces) = name
 
+data Schema = SX
+            | SY
+            | SPiece
+            | (.+.) Schema Schema
+
+Show Schema where
+  show SX = "X-coordinate"
+  show SY = "Y-coordinate"
+  show SPiece = "Piece"
+  show (x .+. y) = show x ++ " " ++ show y
+
+SchemaType : Schema -> (m, n : Nat) -> Type
+SchemaType SX m n = Fin m
+SchemaType SY m n = Fin n
+SchemaType SPiece m n = Piece
+SchemaType (left .+. right) m n = (SchemaType left m n, SchemaType right m n)
+
 record Game where
   constructor MkGame
   board : Board m n
   k : Nat
   rules : Rules
+  schema : Schema
   players : (Player, Player)
   prfm : LTE k m
   prfn : LTE k n
@@ -96,7 +116,7 @@ showBoard {m} brd = mLabelRow m ++ showBoardHelper 0 brd ++ mLabelRow m
                                   showNumLabel a ++ "\n" ++ showBoardHelper (a + 1) xs
 
 showGame : Game -> String
-showGame (MkGame board k rules players prfm prfn)
+showGame (MkGame board k rules schema players prfm prfn)
   = show rules ++ "\n" ++ showBoard board
 
 ------ Proofs (and associated rewriting functions) ------
