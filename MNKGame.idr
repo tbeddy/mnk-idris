@@ -121,19 +121,6 @@ plusMinusProof {a} {b} prf xs = rewrite plusMinusCancelOut a b prf in xs
 
 ------ Gameplay functions ------
 
-flipHorizontal : Board m n -> Board m n
-flipHorizontal [] = []
-flipHorizontal (x :: xs) = reverse x :: flipHorizontal xs
-
-allRowEq : Row m -> Maybe Piece
-allRowEq [] = Nothing
-allRowEq (x :: []) = x
-allRowEq (x :: xs@(y :: ys)) = case x of
-                                    Nothing => Nothing
-                                    (Just x') => if x == y
-                                                    then allRowEq xs
-                                                    else Nothing
-
 ||| Ported from Matrix library
 deleteRow : Fin (S n) -> Board m (S n) -> Board m n
 deleteRow = deleteAt
@@ -160,11 +147,20 @@ kSquareList {mrest = (S j)} {nrest = (S i)} k xs = (kSquare k xs) ::
                                                      k (deleteCol 0 (map plusSProof xs))
 
 diagsRowsCols : Board k k -> List (Row k)
-diagsRowsCols xs = diag xs :: diag (flipHorizontal xs) ::
+diagsRowsCols xs = diag xs :: diag (map reverse xs) ::
                    toList xs ++ toList (transpose xs)
 
 allLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Row k)
 allLines k xs = join $ map diagsRowsCols (kSquareList k xs)
+
+allRowEq : Row m -> Maybe Piece
+allRowEq [] = Nothing
+allRowEq (x :: []) = x
+allRowEq (x :: xs@(y :: ys)) = case x of
+                                    Nothing => Nothing
+                                    (Just x') => if x == y
+                                                    then allRowEq xs
+                                                    else Nothing
 
 ||| If there any game winning lines, return that line's piece
 anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Maybe Piece
@@ -173,29 +169,79 @@ anyWinningLines (S j) xs = checkLines (allLines (S j) xs)
   where
     checkLines : List (Row (S j)) -> Maybe Piece
     checkLines [] = Nothing
-    checkLines (xxs@(x :: xs) :: ys) = case allRowEq xxs of
-                                            Nothing => checkLines ys
-                                            (Just x') => Just x'
-
-replaceRow : Piece -> (x : Fin m) -> Row m -> Row m
-replaceRow pce x row = replaceAt x (Just pce) row
+    checkLines (x :: xs) = case allRowEq x of
+                                Nothing => checkLines xs
+                                (Just x') => Just x'
 
 addPiece' : Piece -> (x : Fin m) -> (y : Fin n) -> Board m n -> Board m n
-addPiece' pce x FZ (z :: zs) = (replaceRow pce x z) :: zs
+addPiece' pce x FZ (z :: zs) = (replaceAt x (Just pce) z) :: zs
 addPiece' pce x (FS y) (z :: zs) = z :: addPiece' pce x y zs
 
-addPiece : Piece -> (x : Fin m) -> (y : Fin n) -> Board m n -> Maybe (Board m n)
-addPiece pce x y brd = case index x $ index y brd of
-                        Nothing => Just (addPiece' pce x y brd)
-                        (Just pce') => Nothing
+cfHelper : Row a -> Maybe Nat
+cfHelper {a = Z} [] = Nothing
+cfHelper {a = (S k)} (x :: xs)
+  = case x of
+         Nothing => Just k
+         (Just pce') => cfHelper {a = k} xs
 
-isDraw : Board m n -> Bool
-isDraw {m} {n} brd = let (len ** flatboard) = catMaybes (concat brd) in
-                         len == (m * n)
+addPiece : SchemaType schema m n -> Board m n -> Player -> Maybe (Board m n)
+addPiece {schema = (SX .+. SY)}
+         (x, y) brd plyr
+  = case index x $ index y brd of
+         Nothing => Just (addPiece' (pieces plyr) x y brd)
+         (Just pce') => Nothing
+addPiece {schema = SX} {n}
+         x brd plyr
+  = do y' <- cfHelper (reverse $ index x $ transpose brd)
+       y <- natToFin y' n
+       Just (addPiece' (pieces plyr) x y brd)
+addPiece {schema = (SX .+. SY .+. SPiece)}
+         (x, (y, pce)) brd plyr
+  = case index x $ index y brd of
+         Nothing => Just (addPiece' pce x y brd)
+         (Just pce') => Nothing
+addPiece {schema = (SX .+. SPiece)} {n}
+         (x, pce) brd plyr
+  = do y' <- cfHelper (reverse $ index x $ transpose brd)
+       y <- natToFin y' n
+       Just (addPiece' pce x y brd)
+addPiece {schema = _} schtype brd plyr = Nothing
 
-nextPiece : Piece -> Piece
-nextPiece X = O
-nextPiece O = X
+------ Game ending ------
+
+isBoardFull : Board m n -> Bool
+isBoardFull {m} {n} brd = let (len ** _) = catMaybes (concat brd) in
+                              len == (m * n)
+
+showWinnerAndLoser : (winner, loser : String) -> String
+showWinnerAndLoser winner loser = "Winner: " ++ winner ++ "Loser:  " ++ loser
+
+fullBoardEnding : (orderchaos : Bool) -> String
+fullBoardEnding False = "Draw"
+fullBoardEnding True = showWinnerAndLoser "Chaos" "Order"
+
+winningLineEnding : (p1, p2 : Player) -> (misere, orderchaos : Bool) -> String
+winningLineEnding p1 p2 False False
+  = showWinnerAndLoser (show p1) (show p2)
+winningLineEnding p1 p2 False True
+  = showWinnerAndLoser "Order" "Chaos"
+winningLineEnding p1 p2 True False
+  = showWinnerAndLoser (show p2) (show p1)
+winningLineEnding p1 p2 True True
+  = showWinnerAndLoser "Chaos" "Order"
+
+------ Game initialization ------
+
+createSchema : (wild, connectfour : Bool) -> Schema
+createSchema False False = (SX .+. SY)
+createSchema False True = SX
+createSchema True False = (SX .+. SY .+. SPiece)
+createSchema True True = (SX .+. SPiece)
+
+createPlayers : (wild, orderchaos : Bool) -> (Player, Player)
+createPlayers _    True = ((MkPlayer "Order" X), (MkPlayer "Chaos" O))
+createPlayers True _    = ((MkPlayer "P1" X), (MkPlayer "P2" O))
+createPlayers _    _    = ((MkPlayer "X" X), (MkPlayer "O" O))
 
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
