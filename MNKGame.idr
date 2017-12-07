@@ -28,13 +28,17 @@ record Rules where
   constructor MkRules
   misere : Bool
   wild : Bool
+  connectfour : Bool
+  orderchaos : Bool
 
 Show Rules where
-  show (MkRules False False) = "Rules: Normal"
-  show (MkRules misere wild)
+  show (MkRules False False False False) = "Rules: Normal"
+  show (MkRules misere wild connectfour orderchaos)
     = "Rules:" ++
       (if misere then " Misere" else "") ++
-      (if wild then " Wild" else "")
+      (if wild then " Wild" else "") ++
+      (if connectfour then " ConnectFour" else "") ++
+      (if orderchaos then " Order&Chaos" else "")
 
 record Player where
   constructor MkPlayer
