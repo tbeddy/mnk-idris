@@ -234,7 +234,7 @@ isBoardFull {m} {n} brd = let (len ** _) = catMaybes (concat brd) in
                               len == (m * n)
 
 showWinnerAndLoser : (winner, loser : String) -> String
-showWinnerAndLoser winner loser = "Winner: " ++ winner ++ "Loser:  " ++ loser
+showWinnerAndLoser winner loser = "Winner: " ++ winner ++ "\nLoser:  " ++ loser
 
 fullBoardEnding : (orderchaos : Bool) -> String
 fullBoardEnding False = "Draw"
