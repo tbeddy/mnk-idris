@@ -2,7 +2,7 @@
 
 This is a small personal project to learn the dependently-typed language [Idris](http://idris-lang.org/) while going through the book [Type-Driven Development with Idris](https://www.manning.com/books/type-driven-development-with-idris). It's a work in progress, so expect breaking changes.
 
-This project implements a CLI [m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game). Several variatons can be selected when starting a new game: [Misère](https://en.wikipedia.org/wiki/Tic-tac-toe_variants#Mis.C3.A8re_games), [Connect Four](https://en.wikipedia.org/wiki/Connect_Four) input, [Wild (Tic Tac Toe)](https://en.wikipedia.org/wiki/Wild_tic-tac-toe), and [Order&Chaos](https://en.wikipedia.org/wiki/Order_and_Chaos).
+This project implements a CLI [m,n,k-game](https://en.wikipedia.org/wiki/M,n,k-game). Several variations can be selected when starting a new game: [Misère](https://en.wikipedia.org/wiki/Tic-tac-toe_variants#Mis.C3.A8re_games), [Connect Four](https://en.wikipedia.org/wiki/Connect_Four) input, [Wild (Tic Tac Toe)](https://en.wikipedia.org/wiki/Wild_tic-tac-toe), and [Order&Chaos](https://en.wikipedia.org/wiki/Order_and_Chaos).
 
 For example, if you want to play an 8,5,4 game with Misère, Connect Four, Wild, and Order&Chaos all turned on, enter your terminal:
 ```
