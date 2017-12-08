@@ -56,8 +56,8 @@ data Schema = SX
             | (.+.) Schema Schema
 
 Show Schema where
-  show SX = "X-coordinate"
-  show SY = "Y-coordinate"
+  show SX = "Column"
+  show SY = "Row"
   show SPiece = "Piece"
   show (x .+. y) = show x ++ " " ++ show y
 
@@ -117,7 +117,7 @@ showBoard {m} brd = mLabelRow m ++ showBoardHelper 0 brd ++ mLabelRow m
 
 showGame : Game -> String
 showGame (MkGame board k rules schema players prfm prfn)
-  = show rules ++ "\n" ++ showBoard board
+  = "k = " ++ show k ++ ", " ++ show rules ++ "\n" ++ showBoard board
 
 ------ Proofs (and associated rewriting functions) ------
 
@@ -379,7 +379,7 @@ gameLoop st@(MkGame {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm p
 partial
 enterValues : IO ()
 enterValues =
-  do putStr "Enter m,n,k values and any extra game modes: "
+  do putStr "Enter m,n,k values and any extra game modes (all separated by spaces): "
      testvals <- getLine
      case parseNewGame (words testvals) of
           Nothing => do putStrLn "Invalid input"
@@ -400,4 +400,12 @@ enterValues =
 partial
 main : IO ()
 main = do putStrLn "Welcome to MNK!"
+          putStrLn ("Optional game modes:\n" ++
+                    "  mis (Misère): Usual winner and loser are reversed\n" ++
+                    "  wild (Wild): Both players can use X or O\n" ++
+                    "  cf (ConnectFour): Player's piece will go to the lowest\n" ++
+                    "                    position in the selected column\n" ++
+                    "  oc (Order&Chaos): 1st player (Order) tries to make a\n" ++
+                    "                    k-length row, while 2nd player (Chaos)\n" ++
+                    "                    tries to prevent this")
           enterValues
