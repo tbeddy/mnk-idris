@@ -171,7 +171,7 @@ diagsRowsCols xs = diag xs :: diag (map reverse xs) ::
                    toList xs ++ toList (transpose xs)
 
 allLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Row k)
-allLines k xs = join $ map diagsRowsCols (kSquareList k xs)
+allLines k xs = nub $ join $ map diagsRowsCols (kSquareList k xs)
 
 allRowEq : Row m -> Maybe Piece
 allRowEq [] = Nothing
