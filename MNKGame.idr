@@ -266,6 +266,13 @@ createPlayers _    _    = ((MkPlayer "X" X), (MkPlayer "O" O))
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
+initialGame : Maybe Game
+initialGame = case isLTE 3 3 of
+                   (No contra) => Nothing
+                   (Yes prf) =>
+                     Just (MkGame (emptyBoard 3 3) 3 (MkRules False False False False) SX
+                                  (createPlayers False False) prf prf)
+
 lteMNK : (m, n, k : Nat) -> Maybe (LTE k m, LTE k n)
 lteMNK m n k = case isLTE k m of
                     (No contra) => Nothing
@@ -346,47 +353,112 @@ parseNewGame xs = let (_ ** mnkvals) = catMaybes $ fromList $
 
 ------ IO ------
 
+data Command : Type -> Type where
+     PutStr : String -> Command ()
+     GetStr : Command String
+     GetGameState : Command Game
+     PutGameState : Game -> Command ()
+     Pure : ty -> Command ty
+     Bind : Command a -> (a -> Command b) -> Command b
+
+Functor Command where
+  map func x = Bind x (\val => Pure (func val))
+
+Applicative Command where
+  pure x = Pure x
+  (<*>) x y = Bind x (\x' => Bind y (\y' => Pure (x' y')))
+
+Monad Command where
+  (>>=) x f = Bind x f
+
+data ConsoleIO : Type -> Type where
+     Quit : a -> ConsoleIO a
+     Do : Command a -> (a -> Inf (ConsoleIO b)) -> ConsoleIO b
+
+namespace CommandDo
+  (>>=) : Command a -> (a -> Command b) -> Command b
+  (>>=) = Bind
+
+namespace ConsoleDo
+  (>>=) : Command a -> (a -> Inf (ConsoleIO b)) -> ConsoleIO b
+  (>>=) = Do
+
+data Fuel = Dry | More (Lazy Fuel)
+
 partial
-gameLoop : Game -> IO ()
-gameLoop st@(MkGame {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm prfn) =
-  do putStrLn ((show thisPlayer) ++ "'s turn")
-     putStr (show schema ++ ": ")
-     testinput <- getLine
+forever : Fuel
+forever = More forever
+
+runCommand : Game -> Command a -> IO (a, Game)
+runCommand game (PutStr x)
+  = do putStr x
+       pure ((), game)
+runCommand game GetStr
+  = do str <- getLine
+       pure (str, game)
+runCommand game GetGameState
+  = pure (game, game)
+runCommand game (PutGameState newState)
+  = pure ((), newState)
+runCommand game (Pure val)
+  = pure (val, game)
+runCommand game (Bind c f)
+  = do (res, newState) <- runCommand game c
+       runCommand newState (f res)
+
+run : Fuel -> Game -> ConsoleIO a -> IO (Maybe a, Game)
+run fuel game (Quit val)
+  = pure (Just val, game)
+run (More fuel) game (Do c f)
+  = do (res, newState) <- runCommand game c
+       run fuel newState (f res)
+run Dry game _
+  = pure (Nothing, game)
+
+gameLoop : ConsoleIO Game
+gameLoop =
+  do (MkGame {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm prfn) <- GetGameState
+     PutStr (show schema ++ ": ")
+     testinput <- GetStr
      case parseBySchema schema testinput m n of
-          Nothing => do putStrLn "Invalid input"
-                        gameLoop st
+          Nothing => do PutStr "Invalid input\n"
+                        gameLoop
           (Just validinput) =>
             case addPiece validinput board thisPlayer of
-                 Nothing => do putStrLn "That space is occupied"
-                               gameLoop st
+                 Nothing => do PutStr "That space is occupied\n"
+                               gameLoop
                  (Just newbrd) =>
                    case (anyWinningLines {mrest = m - k} {nrest = n - k}
                           k (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))) of
                         Nothing =>
                           if isBoardFull newbrd
-                             then putStrLn $ fullBoardEnding $ orderchaos rules
+                             then do PutStr ((fullBoardEnding $ orderchaos rules) ++ "\n")
+                                     Quit (MkGame {m} {n} board k rules schema
+                                                  (thisPlayer, nextPlayer) prfm prfn)
                              else do let newgamestate = (MkGame newbrd k rules schema
                                                                 (nextPlayer, thisPlayer)
                                                                 prfm prfn)
-                                     putStrLn (showGame newgamestate)
-                                     gameLoop newgamestate
+                                     PutStr ((showGame newgamestate) ++ "\n")
+                                     PutGameState newgamestate
+                                     gameLoop
                         (Just winpce) =>
-                          do putStrLn (showBoard newbrd)
-                             putStrLn (winningLineEnding
-                                        thisPlayer nextPlayer
-                                        (misere rules) (orderchaos rules))
+                          do PutStr (showBoard newbrd)
+                             PutStr ((winningLineEnding
+                                      thisPlayer nextPlayer
+                                      (misere rules) (orderchaos rules)) ++ "\n")
+                             Quit (MkGame {m} {n} newbrd k rules schema
+                                          (thisPlayer, nextPlayer) prfm prfn)
 
-partial
-enterValues : IO ()
+enterValues : ConsoleIO Game
 enterValues =
-  do putStr "Enter m,n,k values and any extra game modes (all separated by spaces): "
-     testvals <- getLine
+  do PutStr "Enter m,n,k values and any extra game modes (all separated by spaces): "
+     testvals <- GetStr
      case parseNewGame (words testvals) of
-          Nothing => do putStrLn "Invalid input"
+          Nothing => do PutStr "Invalid input\n"
                         enterValues
           (Just ([m, n, k], [mis, wild, cf, oc])) =>
             case lteMNK m n k of
-                 Nothing => do putStrLn "k should not be larger than m or n"
+                 Nothing => do PutStr "k should not be larger than m or n\n"
                                enterValues
                  (Just (prfm, prfn)) =>
                    do let initialgame = (MkGame (emptyBoard m n) k
@@ -394,8 +466,9 @@ enterValues =
                                                 (createSchema wild cf)
                                                 (createPlayers wild oc)
                                                 prfm prfn)
-                      putStrLn (showGame initialgame)
-                      gameLoop initialgame
+                      PutGameState initialgame
+                      PutStr ((showGame initialgame) ++ "\n")
+                      gameLoop
 
 partial
 main : IO ()
@@ -408,4 +481,8 @@ main = do putStrLn "Welcome to MNK!"
                     "  oc (Order&Chaos): 1st player (Order) tries to make a\n" ++
                     "                    k-length row, while 2nd player (Chaos)\n" ++
                     "                    tries to prevent this")
-          enterValues
+          case initialGame of
+               Nothing => main
+               (Just iG) =>
+                 do (Just a, b) <- run forever iG enterValues
+                    pure ()
