@@ -280,6 +280,99 @@ lteMNK m n k = case isLTE k m of
                                        (No contra) => Nothing
                                        (Yes prfn) => Just (prfm, prfn)
 
+------ Save/Load ------
+
+savePiece : Maybe Piece -> String
+savePiece Nothing = "-"
+savePiece (Just pce) = show pce
+
+saveBoard : Board m n -> String
+saveBoard [] = ""
+saveBoard (row :: rows) = (concat $ map savePiece row) ++ "\n" ++ saveBoard rows
+
+saveGame' : GameState -> String
+saveGame' (MkGameState {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm prfn)
+  = "m: " ++ show m ++ " , " ++ "n: " ++ show n ++ " , " ++ "k: " ++ show k ++ " , " ++
+    showRules rules ++ " , " ++ "CurrentPlayer: " ++ show thisPlayer ++ "\n" ++
+    saveBoard board
+
+saveGame : (st : GameState) -> (filename : String) -> IO ()
+saveGame st filename =
+  do let gametxt = saveGame' st
+     Right () <- writeFile filename gametxt
+       | Left err => putStrLn (show err)
+     pure ()
+
+loadPiece : Char -> Maybe (Maybe Piece)
+loadPiece 'X' = Just (Just X)
+loadPiece 'O' = Just (Just O)
+loadPiece '-' = Just Nothing
+loadPiece _ = Nothing
+
+loadRow : (m : Nat) -> String -> Maybe (Row m)
+loadRow m str
+  = let (row_len ** row) = catMaybes $ fromList $ map loadPiece $ unpack str in
+        case decEq row_len m of
+             (Yes Refl) => Just row
+             (No contra) => Nothing
+
+loadBoard : (m : Nat) -> (n : Nat) -> Vect n String -> (Maybe (Board m n))
+loadBoard m n xs = let (n' ** board) = catMaybes $ map (loadRow m) xs in
+                       case decEq n n' of
+                            (Yes Refl) => Just board
+                            (No contra) => Nothing
+
+loadRules : String -> Maybe Rules
+loadRules str = let xs = split (\c => c == ',') str in
+                    Just (MkRules (elem "Misere" xs)
+                                  (elem "Wild" xs)
+                                  (elem "ConnectFour" xs)
+                                  (elem "Order&Chaos" xs))
+
+loadPlayers : String -> (wild, orderchaos : Bool) -> Maybe (Player, Player)
+loadPlayers "X"     False False = Just ((MkPlayer "X" X), (MkPlayer "O" O))
+loadPlayers "O"     False False = Just ((MkPlayer "O" O), (MkPlayer "X" X))
+loadPlayers "P1"    True  False = Just ((MkPlayer "P1" X), (MkPlayer "P2" O))
+loadPlayers "P2"    True  False = Just ((MkPlayer "P2" O), (MkPlayer "P1" X))
+loadPlayers "Order" _     True  = Just ((MkPlayer "Order" X), (MkPlayer "Chaos" O))
+loadPlayers "Chaos" _     True  = Just ((MkPlayer "Chaos" O), (MkPlayer "Order" X))
+loadPlayers _       _     _     = Nothing
+
+loadGame' : List String -> Maybe GameState
+loadGame' ("m:" :: m_str :: "," ::
+           "n:" :: n_str :: "," ::
+           "k:" :: k_str :: "," ::
+           "Rules:" :: rules_str :: "," ::
+           "CurrentPlayer:" :: player_str ::
+           board_list)
+  = do m <- parsePositive {a = Nat} m_str
+       n <- parsePositive {a = Nat} n_str
+       k <- parsePositive {a = Nat} k_str
+       (prfm, prfn) <- lteMNK m n k
+       rules <- loadRules rules_str
+       players <- loadPlayers player_str (wild rules) (orderchaos rules)
+       board_vect <- exactLength n (fromList board_list)
+       board <- loadBoard m n board_vect
+       Just (MkGameState board k rules
+                         (createSchema (wild rules) (connectfour rules))
+                         players prfm prfn)
+loadGame' _ = Nothing
+
+loadGame : (filename : String) -> IO (Either String GameState)
+loadGame filename =
+  do Right contents <- readFile filename
+       | Left err => pure (Left (show err))
+     case loadGame' (words contents) of
+          Nothing => pure (Left "Game file in incorrect format")
+          Just st => pure (Right st)
+
+load : IO ()
+load = do putStr "Input filename with saved game: "
+          f <- getLine
+          Right st <- loadGame f
+            | Left err_str => putStrLn err_str
+          putStrLn (showGame st)
+
 ------ Input parsing ------
 
 parsePrefix : (schema : Schema) -> String -> (m, n : Nat) ->
