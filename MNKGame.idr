@@ -34,45 +34,46 @@ record Rules where
   orderchaos : Bool
 
 Show Rules where
-  show (MkRules False False False False) = "Rules: Normal"
+  show (MkRules False False False False) = "Normal"
   show (MkRules misere wild connectfour orderchaos)
-    = "Rules:" ++
-      (if misere then " Misere" else "") ++
+    = (if misere then " Misere" else "") ++
       (if wild then " Wild" else "") ++
       (if connectfour then " ConnectFour" else "") ++
       (if orderchaos then " Order&Chaos" else "")
 
-record Player where
-  constructor MkPlayer
-  name : String
-  pieces : Piece
-
-Show Player where
-  show (MkPlayer name pieces) = name
-
 data Schema = SX
             | SY
             | SPiece
+            | SP Piece
             | (.+.) Schema Schema
 
 Show Schema where
   show SX = "Column"
   show SY = "Row"
   show SPiece = "Piece"
+  show (SP pce) = "(" ++ show pce ++ ")"
   show (x .+. y) = show x ++ " " ++ show y
 
 SchemaType : Schema -> (m, n : Nat) -> Type
 SchemaType SX m n = Fin m
 SchemaType SY m n = Fin n
 SchemaType SPiece m n = Piece
+SchemaType (SP pce) m n = Piece
 SchemaType (left .+. right) m n = (SchemaType left m n, SchemaType right m n)
+
+record Player where
+  constructor MkPlayer
+  name : String
+  schema : Schema
+
+Show Player where
+  show (MkPlayer name schema) = name
 
 record GameState where
   constructor MkGameState
   board : Board m n
   k : Nat
   rules : Rules
-  schema : Schema
   players : (Player, Player)
   prfm : LTE k m
   prfn : LTE k n
@@ -100,24 +101,32 @@ joinStr str (x :: xs@(y :: ys)) = showNumLabel x ++ str ++ joinStr str xs
 
 mLabelRow : (m : Nat) -> String
 mLabelRow m = let leadingws = pack (List.replicate (3 + (List.length (unpack (show m)))) ' ')
-                  mlist = reverse (genVect m) in
+                  mlist = fromList $ take m [0..] in
                   leadingws ++ (joinStr "  " mlist) ++ "\n"
-  where
-    genVect : (a : Nat) -> Vect a Nat
-    genVect Z = []
-    genVect (S b) = b :: genVect b
 
 showBoard : Board m n -> String
-showBoard {m} brd = mLabelRow m ++ showBoardHelper 0 brd ++ mLabelRow m
+showBoard {m} brd = mLabelRow m ++ showBoard' 0 brd ++ mLabelRow m
   where
-    showBoardHelper : (a : Nat) -> Board m n -> String
-    showBoardHelper a [] = ""
-    showBoardHelper a (x :: xs) = showNumLabel a ++ " " ++ showRow x ++ " " ++
-                                  showNumLabel a ++ "\n" ++ showBoardHelper (a + 1) xs
+    showBoard' : (a : Nat) -> Board m n -> String
+    showBoard' a [] = ""
+    showBoard' a (x :: xs) = showNumLabel a ++ " " ++ showRow x ++ " " ++
+                             showNumLabel a ++ "\n" ++ showBoard' (a + 1) xs
+
+||| Rework of unlines/unlines' for using chrs other than newlines
+interleave : (c : Char) -> List String -> String
+interleave c xs = pack $ interleave' $ map unpack xs
+  where
+    interleave' : List (List Char) -> List Char
+    interleave' [] = []
+    interleave' (l :: []) = l
+    interleave' (l :: ls@(x :: xs)) = l ++ c :: interleave' ls
+
+showRules : Rules -> String
+showRules rules = "Rules: " ++ (interleave ',' $ words $ show rules)
 
 showGame : GameState -> String
-showGame (MkGameState board k rules schema players prfm prfn)
-  = "k = " ++ show k ++ ", " ++ show rules ++ "\n" ++ showBoard board
+showGame (MkGameState board k rules players prfm prfn)
+  = "k = " ++ show k ++ ", " ++ showRules rules ++ "\n" ++ showBoard board
 
 ------ Proofs (and associated rewriting functions) ------
 
@@ -167,8 +176,7 @@ kSquareList {mrest = (S j)} {nrest = (S i)} k xs = (kSquare k xs) ::
                                                      k (deleteCol 0 (map plusSProof xs))
 
 diagsRowsCols : Board k k -> List (Row k)
-diagsRowsCols xs = diag xs :: diag (map reverse xs) ::
-                   toList xs ++ toList (transpose xs)
+diagsRowsCols xs = diag xs :: diag (map reverse xs) :: toList xs ++ toList (transpose xs)
 
 allLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Row k)
 allLines k xs = nub $ join $ map diagsRowsCols (kSquareList k xs)
@@ -176,11 +184,10 @@ allLines k xs = nub $ join $ map diagsRowsCols (kSquareList k xs)
 allRowEq : Row m -> Maybe Piece
 allRowEq [] = Nothing
 allRowEq (x :: []) = x
-allRowEq (x :: xs@(y :: ys)) = case x of
-                                    Nothing => Nothing
-                                    (Just x') => if x == y
-                                                    then allRowEq xs
-                                                    else Nothing
+allRowEq (x :: xs@(y :: ys)) = do x' <- x
+                                  if x == y
+                                     then allRowEq xs
+                                     else Nothing
 
 ||| If there any game winning lines, return that line's piece
 anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Maybe Piece
@@ -197,35 +204,33 @@ addPiece' : Piece -> (x : Fin m) -> (y : Fin n) -> Board m n -> Board m n
 addPiece' pce x FZ (z :: zs) = (replaceAt x (Just pce) z) :: zs
 addPiece' pce x (FS y) (z :: zs) = z :: addPiece' pce x y zs
 
-cfHelper : Row a -> Maybe Nat
-cfHelper {a = Z} [] = Nothing
-cfHelper {a = (S k)} (x :: xs)
+cfHelper : (n : Nat) -> Row a -> Maybe (Fin n)
+cfHelper n {a = Z} [] = Nothing
+cfHelper n {a = (S k)} (x :: xs)
   = case x of
-         Nothing => Just k
-         (Just pce') => cfHelper {a = k} xs
+         (Just pce') => cfHelper {a = k} n xs
+         Nothing => natToFin k n
 
-addPiece : SchemaType schema m n -> Board m n -> Player -> Maybe (Board m n)
-addPiece {schema = (SX .+. SY)}
-         (x, y) brd plyr
+addPiece : SchemaType schema m n -> Board m n -> Maybe (Board m n)
+addPiece {schema = (SX .+. SY .+. (SP _))}
+         (x, (y, pce)) brd
   = case index x $ index y brd of
-         Nothing => Just (addPiece' (pieces plyr) x y brd)
+         Nothing => Just (addPiece' pce x y brd)
          (Just pce') => Nothing
-addPiece {schema = SX} {n}
-         x brd plyr
-  = do y' <- cfHelper (reverse $ index x $ transpose brd)
-       y <- natToFin y' n
-       Just (addPiece' (pieces plyr) x y brd)
+addPiece {schema = (SX .+. (SP _))} {n}
+         (x, pce) brd
+  = do y <- cfHelper n $ reverse $ index x $ transpose brd
+       Just (addPiece' pce x y brd)
 addPiece {schema = (SX .+. SY .+. SPiece)}
-         (x, (y, pce)) brd plyr
+         (x, (y, pce)) brd
   = case index x $ index y brd of
          Nothing => Just (addPiece' pce x y brd)
          (Just pce') => Nothing
 addPiece {schema = (SX .+. SPiece)} {n}
-         (x, pce) brd plyr
-  = do y' <- cfHelper (reverse $ index x $ transpose brd)
-       y <- natToFin y' n
+         (x, pce) brd
+  = do y <- cfHelper n $ reverse $ index x $ transpose brd
        Just (addPiece' pce x y brd)
-addPiece {schema = _} schtype brd plyr = Nothing
+addPiece {schema = _} _ _ = Nothing
 
 ------ Game ending ------
 
@@ -252,26 +257,43 @@ winningLineEnding p1 p2 True True
 
 ------ Game initialization ------
 
-createSchema : (wild, connectfour : Bool) -> Schema
-createSchema False False = (SX .+. SY)
-createSchema False True = SX
-createSchema True False = (SX .+. SY .+. SPiece)
-createSchema True True = (SX .+. SPiece)
-
-createPlayers : (wild, orderchaos : Bool) -> (Player, Player)
-createPlayers _    True = ((MkPlayer "Order" X), (MkPlayer "Chaos" O))
-createPlayers True _    = ((MkPlayer "P1" X), (MkPlayer "P2" O))
-createPlayers _    _    = ((MkPlayer "X" X), (MkPlayer "O" O))
+createPlayers : (orderchaos, wild, connectfour : Bool) -> (Player, Player)
+createPlayers True  _ False
+  = ((MkPlayer "Order" (SX .+. SY .+. SPiece)),
+     (MkPlayer "Chaos" (SX .+. SY .+. SPiece)))
+createPlayers True  _ True
+  = ((MkPlayer "Order" (SX .+. SPiece)),
+     (MkPlayer "Chaos" (SX .+. SPiece)))
+createPlayers False True False
+  = ((MkPlayer "P1" (SX .+. SY .+. SPiece)),
+     (MkPlayer "P2" (SX .+. SY .+. SPiece)))
+createPlayers False True True
+  = ((MkPlayer "P1" (SX .+. SPiece)),
+     (MkPlayer "P2" (SX .+. SPiece)))
+createPlayers False False False
+  = ((MkPlayer "X" (SX .+. SY .+. (SP X))),
+     (MkPlayer "O" (SX .+. SY .+. (SP O))))
+createPlayers False False True
+  = ((MkPlayer "X" (SX .+. (SP X))),
+     (MkPlayer "O" (SX .+. (SP O))))
 
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
 initialGame : Maybe GameState
 initialGame = case isLTE 3 3 of
-                   (No contra) => Nothing
-                   (Yes prf) =>
-                     Just (MkGameState (emptyBoard 3 3) 3 (MkRules False False False False) SX
-                                       (createPlayers False False) prf prf)
+                   No contra => Nothing
+                   Yes prf => Just (MkGameState (emptyBoard 3 3) 3
+                                                (MkRules False False False False)
+                                                (createPlayers False False False)
+                                                prf prf)
+
+createNewGame : (m, n, k : Nat) -> (mis, wild, cf, oc : Bool) ->
+                (prfm : LTE k m) -> (prfn : LTE k n) ->
+                GameState
+createNewGame m n k mis wild cf oc prfm prfn =
+  (MkGameState (emptyBoard m n) k (MkRules mis wild cf oc)
+               (createPlayers cf wild oc) prfm prfn)
 
 lteMNK : (m, n, k : Nat) -> Maybe (LTE k m, LTE k n)
 lteMNK m n k = case isLTE k m of
@@ -291,7 +313,7 @@ saveBoard [] = ""
 saveBoard (row :: rows) = (concat $ map savePiece row) ++ "\n" ++ saveBoard rows
 
 saveGame' : GameState -> String
-saveGame' (MkGameState {m} {n} board k rules schema (thisPlayer, nextPlayer) prfm prfn)
+saveGame' (MkGameState {m} {n} board k rules (thisPlayer, nextPlayer) prfm prfn)
   = "m: " ++ show m ++ " , " ++ "n: " ++ show n ++ " , " ++ "k: " ++ show k ++ " , " ++
     showRules rules ++ " , " ++ "CurrentPlayer: " ++ show thisPlayer ++ "\n" ++
     saveBoard board
@@ -325,18 +347,48 @@ loadBoard m n xs = let (n' ** board) = catMaybes $ map (loadRow m) xs in
 loadRules : String -> Maybe Rules
 loadRules str = let xs = split (\c => c == ',') str in
                     Just (MkRules (elem "Misere" xs)
-                                  (elem "Wild" xs)
+                                  ((elem "Wild" xs) || (elem "Order&Chaos" xs))
                                   (elem "ConnectFour" xs)
                                   (elem "Order&Chaos" xs))
 
-loadPlayers : String -> (wild, orderchaos : Bool) -> Maybe (Player, Player)
-loadPlayers "X"     False False = Just ((MkPlayer "X" X), (MkPlayer "O" O))
-loadPlayers "O"     False False = Just ((MkPlayer "O" O), (MkPlayer "X" X))
-loadPlayers "P1"    True  False = Just ((MkPlayer "P1" X), (MkPlayer "P2" O))
-loadPlayers "P2"    True  False = Just ((MkPlayer "P2" O), (MkPlayer "P1" X))
-loadPlayers "Order" _     True  = Just ((MkPlayer "Order" X), (MkPlayer "Chaos" O))
-loadPlayers "Chaos" _     True  = Just ((MkPlayer "Chaos" O), (MkPlayer "Order" X))
-loadPlayers _       _     _     = Nothing
+loadPlayers : String -> (orderchaos, wild, connectfour : Bool) -> Maybe (Player, Player)
+loadPlayers "X" False False False
+  = Just ((MkPlayer "X" (SX .+. SY .+. (SP X))),
+          (MkPlayer "O" (SX .+. SY .+. (SP O))))
+loadPlayers "X" False False True
+  = Just ((MkPlayer "X" (SX .+. (SP X))),
+          (MkPlayer "O" (SX .+. (SP O))))
+loadPlayers "O" False False False
+  = Just ((MkPlayer "O" (SX .+. SY .+. (SP X))),
+          (MkPlayer "X" (SX .+. SY .+. (SP O))))
+loadPlayers "O" False False True
+  = Just ((MkPlayer "O" (SX .+. (SP X))),
+          (MkPlayer "X" (SX .+. (SP O))))
+loadPlayers "P1" False True False
+  = Just ((MkPlayer "P1" (SX .+. SY .+. SPiece)),
+          (MkPlayer "P2" (SX .+. SY .+. SPiece)))
+loadPlayers "P1" False True True
+  = Just ((MkPlayer "P1" (SX .+. SPiece)),
+          (MkPlayer "P2" (SX .+. SPiece)))
+loadPlayers "P2" False True False
+  = Just ((MkPlayer "P2" (SX .+. SY .+. SPiece)),
+          (MkPlayer "P1" (SX .+. SY .+. SPiece)))
+loadPlayers "P2" False True True
+  = Just ((MkPlayer "P2" (SX .+. SPiece)),
+          (MkPlayer "P1" (SX .+. SPiece)))
+loadPlayers "Order" True _ False
+  = Just ((MkPlayer "Order" (SX .+. SY .+. SPiece)),
+          (MkPlayer "Chaos" (SX .+. SY .+. SPiece)))
+loadPlayers "Order" True _ True
+  = Just ((MkPlayer "Order" (SX .+. SPiece)),
+          (MkPlayer "Chaos" (SX .+. SPiece)))
+loadPlayers "Chaos" True _ False
+  = Just ((MkPlayer "Chaos" (SX .+. SY .+. SPiece)),
+          (MkPlayer "Order" (SX .+. SY .+. SPiece)))
+loadPlayers "Chaos" True _ True
+  = Just ((MkPlayer "Chaos" (SX .+. SPiece)),
+          (MkPlayer "Order" (SX .+. SPiece)))
+loadPlayers _ _ _ _ = Nothing
 
 loadGame' : List String -> Maybe GameState
 loadGame' ("m:" :: m_str :: "," ::
@@ -350,12 +402,10 @@ loadGame' ("m:" :: m_str :: "," ::
        k <- parsePositive {a = Nat} k_str
        (prfm, prfn) <- lteMNK m n k
        rules <- loadRules rules_str
-       players <- loadPlayers player_str (wild rules) (orderchaos rules)
+       players <- loadPlayers player_str (orderchaos rules) (wild rules) (connectfour rules)
        board_vect <- exactLength n (fromList board_list)
        board <- loadBoard m n board_vect
-       Just (MkGameState board k rules
-                         (createSchema (wild rules) (connectfour rules))
-                         players prfm prfn)
+       Just (MkGameState board k rules players prfm prfn)
 loadGame' _ = Nothing
 
 loadGame : (filename : String) -> IO (Either String GameState)
@@ -397,6 +447,7 @@ parsePrefix SPiece input m n = maybePieceInput (unpack input)
     maybePieceInput ('X' :: rest) = Just (X, ltrim (pack rest))
     maybePieceInput ('O' :: rest) = Just (O, ltrim (pack rest))
     maybePieceInput _ = Nothing
+parsePrefix (SP pce) input m n = Just (pce, "")
 parsePrefix (left .+. right) input m n =
   do (l_val, input') <- parsePrefix left input m n
      (r_val, input'') <- parsePrefix right input' m n
@@ -409,40 +460,19 @@ parseBySchema schema input m n = case parsePrefix schema input m n of
                                       (Just _) => Nothing
                                       Nothing => Nothing
 
-parseSchema : List String -> Maybe Schema
-parseSchema ("X" :: xs)
-  = case xs of
-         [] => Just SX
-         _ => case parseSchema xs of
-                   Nothing => Nothing
-                   (Just xs_sch) => Just (SX .+. xs_sch)
-parseSchema ("Y" :: xs)
-  = case xs of
-         [] => Just SY
-         _ => case parseSchema xs of
-                   Nothing => Nothing
-                   (Just xs_sch) => Just (SY .+. xs_sch)
-parseSchema ("Piece" :: xs)
-  = case xs of
-         [] => Just SPiece
-         _ => case parseSchema xs of
-                   Nothing => Nothing
-                   (Just xs_sch) => Just (SPiece .+. xs_sch)
-parseSchema _ = Nothing
-
 parseRules : List String -> Vect 4 Bool
 parseRules xs = [elem "mis" xs,
-                 elem "wild" xs,
+                 (elem "wild" xs) || (elem "oc" xs),
                  elem "cf" xs,
                  elem "oc" xs]
 
 parseNewGame : List String -> Maybe (Vect 3 Nat, Vect 4 Bool)
-parseNewGame xs = let (_ ** mnkvals) = catMaybes $ fromList $
-                                       map (parsePositive {a = Nat}) $ take 3 xs
-                      rules = drop 3 xs in
-                      case exactLength 3 mnkvals of
-                           Nothing => Nothing
-                           (Just mnkvals') => Just (mnkvals', parseRules rules)
+parseNewGame (m_str :: n_str :: k_str :: rules_str)
+  = do m <- parsePositive {a = Nat} m_str
+       n <- parsePositive {a = Nat} n_str
+       k <- parsePositive {a = Nat} k_str
+       Just ([m, n, k], parseRules rules_str)
+parseNewGame _ = Nothing
 
 ------ IO ------
 
@@ -510,15 +540,15 @@ run Dry state _
 
 gameLoop : ConsoleIO GameState
 gameLoop =
-  do (MkGameState {m} {n} board k rules schema
-                  (thisPlayer, nextPlayer) prfm prfn) <- GetGameState
-     PutStr (show schema ++ ": ")
+  do (MkGameState {m} {n} board k rules (thisPlayer, nextPlayer) prfm prfn) <- GetGameState
+     PutStr (show thisPlayer ++ "'s Turn\n")
+     PutStr (show (schema thisPlayer) ++ ": ")
      testinput <- GetStr
-     case parseBySchema schema testinput m n of
+     case parseBySchema (schema thisPlayer) testinput m n of
           Nothing => do PutStr "Invalid input\n"
                         gameLoop
           (Just validinput) =>
-            case addPiece validinput board thisPlayer of
+            case addPiece validinput board of
                  Nothing => do PutStr "That space is occupied\n"
                                gameLoop
                  (Just newbrd) =>
@@ -527,9 +557,10 @@ gameLoop =
                         Nothing =>
                           if isBoardFull newbrd
                              then do PutStr ((fullBoardEnding $ orderchaos rules) ++ "\n")
-                                     Quit (MkGameState {m} {n} board k rules schema
-                                                       (thisPlayer, nextPlayer) prfm prfn)
-                             else do let newgamestate = (MkGameState newbrd k rules schema
+                                     Quit (MkGameState board k rules
+                                                       (thisPlayer, nextPlayer)
+                                                       prfm prfn)
+                             else do let newgamestate = (MkGameState newbrd k rules
                                                                      (nextPlayer, thisPlayer)
                                                                      prfm prfn)
                                      PutStr ((showGame newgamestate) ++ "\n")
@@ -540,8 +571,9 @@ gameLoop =
                              PutStr ((winningLineEnding
                                       thisPlayer nextPlayer
                                       (misere rules) (orderchaos rules)) ++ "\n")
-                             Quit (MkGameState {m} {n} newbrd k rules schema
-                                               (thisPlayer, nextPlayer) prfm prfn)
+                             Quit (MkGameState newbrd k rules
+                                               (thisPlayer, nextPlayer)
+                                               prfm prfn)
 
 enterValues : ConsoleIO GameState
 enterValues =
@@ -557,8 +589,7 @@ enterValues =
                  (Just (prfm, prfn)) =>
                    do let initialgame = (MkGameState (emptyBoard m n) k
                                                      (MkRules mis wild cf oc)
-                                                     (createSchema wild cf)
-                                                     (createPlayers wild oc)
+                                                     (createPlayers oc wild cf)
                                                      prfm prfn)
                       PutGameState initialgame
                       PutStr ((showGame initialgame) ++ "\n")
