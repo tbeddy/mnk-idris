@@ -97,7 +97,7 @@ showNumLabel k = let numLength = length $ unpack $ show k in
 joinStr : String -> Vect m Nat -> String
 joinStr str [] = ""
 joinStr str (x :: []) = showNumLabel x
-joinStr str (x :: xs@(y :: ys)) = showNumLabel x ++ str ++ joinStr str xs
+joinStr str (x :: xs) = showNumLabel x ++ str ++ joinStr str xs
 
 mLabelRow : (m : Nat) -> String
 mLabelRow m = let leadingws = pack (List.replicate (3 + (List.length (unpack (show m)))) ' ')
@@ -119,7 +119,7 @@ interleave c xs = pack $ interleave' $ map unpack xs
     interleave' : List (List Char) -> List Char
     interleave' [] = []
     interleave' (l :: []) = l
-    interleave' (l :: ls@(x :: xs)) = l ++ c :: interleave' ls
+    interleave' (l :: ls) = l ++ c :: interleave' ls
 
 showRules : Rules -> String
 showRules rules = "Rules: " ++ (interleave ',' $ words $ show rules)
