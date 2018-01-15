@@ -280,13 +280,14 @@ createPlayers False False True
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
-initialGame : Maybe GameState
-initialGame = case isLTE 3 3 of
-                   No contra => Nothing
-                   Yes prf => Just (MkGameState (emptyBoard 3 3) 3
-                                                (MkRules False False False False)
-                                                (createPlayers False False False)
-                                                prf prf)
+lte33 : LTE 3 3
+lte33 = LTESucc (LTESucc (LTESucc LTEZero))
+
+initialGame : GameState
+initialGame = (MkGameState (emptyBoard 3 3) 3
+                           (MkRules False False False False)
+                           (createPlayers False False False)
+                           lte33 lte33)
 
 createNewGame : (m, n, k : Nat) -> (mis, wild, cf, oc : Bool) ->
                 (prfm : LTE k m) -> (prfn : LTE k n) ->
@@ -606,8 +607,5 @@ main = do putStrLn "Welcome to MNK!"
                     "  oc (Order&Chaos): 1st player (Order) tries to make a\n" ++
                     "                    k-length row, while 2nd player (Chaos)\n" ++
                     "                    tries to prevent this")
-          case initialGame of
-               Nothing => main
-               (Just iG) =>
-                 do (Just a, b) <- run forever iG enterValues
-                    pure ()
+          run forever initialGame enterValues
+          pure ()
