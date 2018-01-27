@@ -185,24 +185,21 @@ diagsRowsCols xs = diag xs :: diag (map reverse xs) :: toList xs ++ toList (tran
 allLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> List (Row k)
 allLines k xs = nub $ join $ map diagsRowsCols (kSquareList k xs)
 
-allRowEq : Row m -> Maybe Piece
-allRowEq [] = Nothing
-allRowEq (x :: []) = x
-allRowEq (x :: xs@(y :: ys)) = do x' <- x
-                                  if x == y
-                                     then allRowEq xs
-                                     else Nothing
+allRowEq : Row m -> Bool
+allRowEq [] = False
+allRowEq (x :: []) = True
+allRowEq (x :: xs@(y :: ys)) = if isJust x && x == y
+                                  then allRowEq xs
+                                  else False
 
 ||| If there any game winning lines, return that line's piece
-anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Maybe Piece
-anyWinningLines Z xs = Nothing
+anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Bool
+anyWinningLines Z xs = False
 anyWinningLines (S j) xs = checkLines (allLines (S j) xs)
   where
-    checkLines : List (Row (S j)) -> Maybe Piece
-    checkLines [] = Nothing
-    checkLines (x :: xs) = case allRowEq x of
-                                Nothing => checkLines xs
-                                (Just x') => Just x'
+    checkLines : List (Row (S j)) -> Bool
+    checkLines [] = False
+    checkLines (x :: xs) = if allRowEq x then True else checkLines xs
 
 addPiece' : Piece -> (x : Fin m) -> (y : Fin n) -> Board m n -> Board m n
 addPiece' pce x FZ (z :: zs) = (replaceAt x (Just pce) z) :: zs
