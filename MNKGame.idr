@@ -312,7 +312,7 @@ lteMNK m n k = case isLTE k m of
                                        (Yes prfn) => Just (prfm, prfn)
 
 ------ Save/Load ------
-
+{-
 savePiece : Maybe Piece -> String
 savePiece Nothing = "-"
 savePiece (Just pce) = show pce
@@ -431,7 +431,7 @@ load = do putStr "Input filename with saved game: "
           Right st <- loadGame f
             | Left err_str => putStrLn err_str
           putStrLn (showGame st)
-
+-}
 ------ Input parsing ------
 
 parsePrefix : (schema : Schema) -> String -> (m, n : Nat) ->
