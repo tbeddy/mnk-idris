@@ -128,8 +128,9 @@ showRules : Rules -> String
 showRules rules = "Rules: " ++ (interleave ',' $ words $ show rules)
 
 showGame : GameState -> String
-showGame (MkGameState board k rules players prfm prfn)
-  = "k = " ++ show k ++ ", " ++ showRules rules ++ "\n" ++ showBoard board
+showGame (MkGameState m n k board rules p1 p2 prfm prfn)
+  = "m,n,k = " ++ show m ++ "," ++ show n ++ "," ++ show k ++ ", " ++
+    showRules rules ++ "\n" ++ showBoard board
 
 ------ Proofs (and associated rewriting functions) ------
 
