@@ -311,6 +311,17 @@ lteMNK m n k = case isLTE k m of
                                        (No contra) => Nothing
                                        (Yes prfn) => Just (prfm, prfn)
 
+createGameState : (m, n, k : Nat) -> (mis, wild, cf, oc : Bool) ->
+                  (prfm : LTE k m) -> (prfn : LTE k n) ->
+                  GameState
+createGameState m n k mis wild cf oc prfm prfn =
+       (MkGameState m n k
+                    (emptyBoard m n)
+                    (MkRules mis wild cf oc)
+                    (createPlayer1 oc wild cf)
+                    (createPlayer2 oc wild cf)
+                    prfm prfn)
+
 ------ Save/Load ------
 {-
 savePiece : Maybe Piece -> String
