@@ -71,10 +71,13 @@ Show Player where
 
 record GameState where
   constructor MkGameState
-  board : Board m n
+  m : Nat
+  n : Nat
   k : Nat
+  board : Board m n
   rules : Rules
-  players : (Player, Player)
+  player1 : Player
+  player2 : Player
   prfm : LTE k m
   prfn : LTE k n
 
