@@ -2,6 +2,7 @@ module MNKGame
 
 import Data.Vect
 import Data.String
+import Control.ST
 
 %default total
 
@@ -496,135 +497,291 @@ parseNewGame _ = Nothing
 
 ------ IO ------
 
-data Command : Type -> Type where
-     PutStr : String -> Command ()
-     GetStr : Command String
-     GetGameState : Command GameState
-     PutGameState : GameState -> Command ()
-     Pure : ty -> Command ty
-     Bind : Command a -> (a -> Command b) -> Command b
+createNewGame : String -> Either String GameState
+createNewGame testvals
+  = case parseNewGame (words testvals) of
+         Nothing => Left "Invalid input"
+         Just ([m, n, k], [mis, wild, cf, oc]) =>
+           case lteMNK m n k of
+                Nothing => Left "k should not be larger than m or n"
+                Just (prfm, prfn) =>
+                  Right (createGameState m n k mis wild cf oc prfm prfn)
 
-Functor Command where
-  map func x = Bind x (\val => Pure (func val))
+data MoveResult = Continue | InvalidMove | SpaceOccupied | KLine | BoardFilled
 
-Applicative Command where
-  pure x = Pure x
-  (<*>) x y = Bind x (\x' => Bind y (\y' => Pure (x' y')))
+data GameEnder : MoveResult -> Type where
+     KLineEnd : GameEnder KLine
+     BoardFilledEnd : GameEnder BoardFilled
 
-Monad Command where
-  (>>=) x f = Bind x f
+data GameResult = P1Win | P2Win | Draw
 
-data ConsoleIO : Type -> Type where
-     Quit : a -> ConsoleIO a
-     Do : Command a -> (a -> Inf (ConsoleIO b)) -> ConsoleIO b
+Show GameResult where
+  show P1Win = "Player1 is the winner!"
+  show P2Win = "Player2 is the winner!"
+  show Draw = "It's a draw. No winner!"
 
-namespace CommandDo
-  (>>=) : Command a -> (a -> Command b) -> Command b
-  (>>=) = Bind
+data MenuInput = NewGame | ExitMenu | InvalidMCmd
 
-namespace ConsoleDo
-  (>>=) : Command a -> (a -> Inf (ConsoleIO b)) -> ConsoleIO b
-  (>>=) = Do
+data AppState = InMenu | P1Turn | P2Turn | GameOver
 
-data Fuel = Dry | More (Lazy Fuel)
+data InGame : AppState -> Type where
+     P1Now : InGame P1Turn
+     P2Now : InGame P2Turn
 
-partial
-forever : Fuel
-forever = More forever
+nextTurn : {auto prf : InGame st} -> (st : AppState) -> AppState
+nextTurn {prf = P1Now} st = P2Turn
+nextTurn {prf = P2Now} st = P1Turn
 
-runCommand : GameState -> Command a -> IO (a, GameState)
-runCommand state (PutStr x)
-  = do putStr x
-       pure ((), state)
-runCommand state GetStr
-  = do str <- getLine
-       pure (str, state)
-runCommand state GetGameState
-  = pure (state, state)
-runCommand state (PutGameState newState)
-  = pure ((), newState)
-runCommand state (Pure val)
-  = pure (val, state)
-runCommand state (Bind c f)
-  = do (res, newState) <- runCommand state c
-       runCommand newState (f res)
+interface CLIApp (m : Type -> Type) where
+  AS : AppState -> Type
 
-run : Fuel -> GameState -> ConsoleIO a -> IO (Maybe a, GameState)
-run fuel state (Quit val)
-  = pure (Just val, state)
-run (More fuel) state (Do c f)
-  = do (res, newState) <- runCommand state c
-       run fuel newState (f res)
-run Dry state _
-  = pure (Nothing, state)
+  launch : ST m Var [add (AS InMenu)]
+  exit : (as : Var) -> ST m () [remove as (AS InMenu)]
 
-gameLoop : ConsoleIO GameState
-gameLoop =
-  do (MkGameState {m} {n} board k rules (thisPlayer, nextPlayer) prfm prfn) <- GetGameState
-     PutStr (show thisPlayer ++ "'s Turn\n")
-     PutStr (show (schema thisPlayer) ++ ": ")
-     testinput <- GetStr
-     case parseBySchema (schema thisPlayer) testinput m n of
-          Nothing => do PutStr "Invalid input\n"
-                        gameLoop
-          (Just validinput) =>
-            case addPiece validinput board of
-                 Nothing => do PutStr "That space is occupied\n"
-                               gameLoop
-                 (Just newbrd) =>
-                   case (anyWinningLines {mrest = m - k} {nrest = n - k}
-                          k (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))) of
-                        Nothing =>
-                          if isBoardFull newbrd
-                             then do PutStr ((fullBoardEnding $ orderchaos rules) ++ "\n")
-                                     Quit (MkGameState board k rules
-                                                       (thisPlayer, nextPlayer)
-                                                       prfm prfn)
-                             else do let newgamestate = (MkGameState newbrd k rules
-                                                                     (nextPlayer, thisPlayer)
-                                                                     prfm prfn)
-                                     PutStr ((showGame newgamestate) ++ "\n")
-                                     PutGameState newgamestate
-                                     gameLoop
-                        (Just winpce) =>
-                          do PutStr (showBoard newbrd)
-                             PutStr ((winningLineEnding
-                                      thisPlayer nextPlayer
-                                      (misere rules) (orderchaos rules)) ++ "\n")
-                             Quit (MkGameState newbrd k rules
-                                               (thisPlayer, nextPlayer)
-                                               prfm prfn)
+  menuInput : (as : Var) -> String ->
+              ST m MenuInput [as ::: (AS InMenu) :->
+                                     (\res => AS (case res of
+                                                       NewGame => P1Turn
+                                                       ExitMenu => InMenu
+                                                       InvalidMCmd => InMenu))]
 
-enterValues : ConsoleIO GameState
-enterValues =
-  do PutStr "Enter m,n,k values and any extra game modes (all separated by spaces): "
-     testvals <- GetStr
-     case parseNewGame (words testvals) of
-          Nothing => do PutStr "Invalid input\n"
-                        enterValues
-          (Just ([m, n, k], [mis, wild, cf, oc])) =>
-            case lteMNK m n k of
-                 Nothing => do PutStr "k should not be larger than m or n\n"
-                               enterValues
-                 (Just (prfm, prfn)) =>
-                   do let initialgame = (MkGameState (emptyBoard m n) k
-                                                     (MkRules mis wild cf oc)
-                                                     (createPlayers oc wild cf)
-                                                     prfm prfn)
-                      PutGameState initialgame
-                      PutStr ((showGame initialgame) ++ "\n")
-                      gameLoop
+  makeMoveP1 : (as : Var) ->
+               ST m MoveResult [as ::: (AS P1Turn) :->
+                                       (\res => AS (case res of
+                                                         Continue => P2Turn
+                                                         InvalidMove => P1Turn
+                                                         SpaceOccupied => P1Turn
+                                                         KLine => GameOver
+                                                         BoardFilled => GameOver))]
+  makeMoveP2 : (as : Var) ->
+               ST m MoveResult [as ::: (AS P2Turn) :->
+                                       (\res => AS (case res of
+                                                         Continue => P1Turn
+                                                         InvalidMove => P2Turn
+                                                         SpaceOccupied => P2Turn
+                                                         KLine => GameOver
+                                                         BoardFilled => GameOver))]
 
-partial
+  displayGame : (as : Var) -> {auto prf : InGame st} ->
+                ST m () [as ::: (AS st)]
+
+  displayScore : (as : Var) -> ST m () [as ::: (AS InMenu)]
+
+  endMessage : (as : Var) ->
+               {auto lastturn : InGame st} -> {auto ender : GameEnder move} ->
+               ST m GameResult [as ::: (AS GameOver)]
+  endGame : (as : Var) -> GameResult ->
+            ST m () [as ::: (AS GameOver) :-> (AS InMenu)]
+
+ConsoleIO io => CLIApp io where
+  AS InMenu = Composite [State Nat, State Nat, State Nat]
+  AS P1Turn = Composite [State Nat, State Nat, State Nat, State GameState]
+  AS P2Turn = Composite [State Nat, State Nat, State Nat, State GameState]
+  AS GameOver = Composite [State Nat, State Nat, State Nat, State GameState]
+
+  launch = do as <- new ()
+              p1wins <- new 0
+              p2wins <- new 0
+              draws <- new 0
+              combine as [p1wins, p2wins, draws]
+              pure as
+  exit as = do [p1wins, p2wins, draws] <- split as
+               delete p1wins
+               delete p2wins
+               delete draws
+               delete as
+
+  menuInput as "exit" = pure ExitMenu
+  menuInput as str =
+    case createNewGame str of
+         (Left err) => do putStrLn err; pure InvalidMCmd
+         (Right gs) =>
+           do [p1wins, p2wins, draws] <- split as
+              gsvar <- new gs
+              combine as [p1wins, p2wins, draws, gsvar]
+              pure NewGame
+
+  makeMoveP1 as =
+    do [p1wins, p2wins, draws, gsvar] <- split as
+       (MkGameState m n k board rules p1 p2 prfm prfn) <- read gsvar
+       let schema = schema p1
+       putStrLn "P1's Turn"
+       putStr (show schema ++ ": ")
+       testinput <- getStr
+       case parseBySchema schema testinput m n of
+            Nothing => do combine as [p1wins, p2wins, draws, gsvar]
+                          pure InvalidMove
+            (Just validinput) =>
+              case addPiece validinput board of
+                   Nothing => do combine as [p1wins, p2wins, draws, gsvar]
+                                 pure SpaceOccupied
+                   (Just newbrd) =>
+                     do write gsvar (MkGameState m n k newbrd rules p1 p2 prfm prfn)
+                        combine as [p1wins, p2wins, draws, gsvar]
+                        if anyWinningLines m n k newbrd prfm prfn
+                           then pure KLine
+                        else if isBoardFull newbrd
+                                then pure BoardFilled
+                                else pure Continue
+  makeMoveP2 as =
+    do [p1wins, p2wins, draws, gsvar] <- split as
+       (MkGameState m n k board rules p1 p2 prfm prfn) <- read gsvar
+       let schema = schema p2
+       putStrLn "P2's Turn"
+       putStr (show schema ++ ": ")
+       testinput <- getStr
+       case parseBySchema schema testinput m n of
+            Nothing => do combine as [p1wins, p2wins, draws, gsvar]
+                          pure InvalidMove
+            (Just validinput) =>
+              case addPiece validinput board of
+                   Nothing => do combine as [p1wins, p2wins, draws, gsvar]
+                                 pure SpaceOccupied
+                   (Just newbrd) =>
+                     do write gsvar (MkGameState m n k newbrd rules p1 p2 prfm prfn)
+                        combine as [p1wins, p2wins, draws, gsvar]
+                        if anyWinningLines m n k newbrd prfm prfn
+                           then pure KLine
+                        else if isBoardFull newbrd
+                                then pure BoardFilled
+                                else pure Continue
+
+  displayGame {prf = P1Now} as =
+    do [p1wins, p2wins, draws, gsvar] <- split as
+       gs <- read gsvar
+       putStrLn $ showGame gs
+       combine as [p1wins, p2wins, draws, gsvar]
+  displayGame {prf = P2Now} as =
+    do [p1wins, p2wins, draws, gsvar] <- split as
+       gs <- read gsvar
+       putStrLn $ showGame gs
+       combine as [p1wins, p2wins, draws, gsvar]
+
+  displayScore as =
+    do [p1wins, p2wins, draws] <- split as
+       p1 <- read p1wins
+       p2 <- read p2wins
+       d <- read draws
+       putStrLn $ "Current score:\n" ++
+                  "  P1 wins : " ++ show p1 ++ "\n" ++
+                  "  P2 wins : " ++ show p2 ++ "\n" ++
+                  "  Draws :   " ++ show d
+       combine as [p1wins, p2wins, draws]
+
+  endMessage {lastturn = P1Now} {ender = KLineEnd} as
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         gs <- read gsvar
+         combine as [p1wins, p2wins, draws, gsvar]
+         let mis = misere $ rules gs
+         let oc = orderchaos $ rules gs
+         if mis then pure P2Win
+                else pure P1Win
+  endMessage {lastturn = P2Now} {ender = KLineEnd} as
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         gs <- read gsvar
+         combine as [p1wins, p2wins, draws, gsvar]
+         let mis = misere $ rules gs
+         let oc = orderchaos $ rules gs
+         if oc then if mis then pure P2Win
+                           else pure P1Win
+               else if mis then pure P1Win
+                           else pure P2Win
+  endMessage {lastturn = _} {ender = BoardFilledEnd} as
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         gs <- read gsvar
+         combine as [p1wins, p2wins, draws, gsvar]
+         let mis = misere $ rules gs
+         let oc = orderchaos $ rules gs
+         if oc then if mis then pure P1Win
+                           else pure P2Win
+               else pure Draw
+
+  endGame as P1Win
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         delete gsvar
+         update p1wins (+1)
+         combine as [p1wins, p2wins, draws]
+  endGame as P2Win
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         delete gsvar
+         update p2wins (+1)
+         combine as [p1wins, p2wins, draws]
+  endGame as Draw
+    = do [p1wins, p2wins, draws, gsvar] <- split as
+         delete gsvar
+         update draws (+1)
+         combine as [p1wins, p2wins, draws]
+
+%default partial
+
+using (ConsoleIO io, CLIApp io)
+  gameLoop : (as : Var) -> {auto prf : InGame st} ->
+             ST io () [as ::: (AS {m=io} st) :-> (AS {m=io} InMenu)]
+  gameLoop {prf = P1Now} as = do displayGame as
+                                 moveresult <- makeMoveP1 as
+                                 case moveresult of
+                                      Continue => gameLoop as
+                                      InvalidMove =>
+                                        do putStrLn "Invalid input"
+                                           gameLoop as
+                                      SpaceOccupied =>
+                                        do putStrLn "Space occupied"
+                                           gameLoop as
+                                      KLine =>
+                                        do result <- endMessage as
+                                           printLn result
+                                           endGame as result
+                                      BoardFilled =>
+                                        do result <- endMessage as
+                                           printLn result
+                                           endGame as result
+  gameLoop {prf = P2Now} as = do displayGame as
+                                 moveresult <- makeMoveP2 as
+                                 case moveresult of
+                                      Continue => gameLoop as
+                                      InvalidMove =>
+                                        do putStrLn "Invalid input"
+                                           gameLoop as
+                                      SpaceOccupied =>
+                                        do putStrLn "Space occupied"
+                                           gameLoop as
+                                      KLine =>
+                                        do result <- endMessage as
+                                           printLn result
+                                           endGame as result
+                                      BoardFilled =>
+                                        do result <- endMessage as
+                                           printLn result
+                                           endGame as result
+
+  menuLoop : (as : Var) -> ST io () [as ::: (AS {m=io} InMenu)]
+  menuLoop as = do putStr "Enter game values (or 'exit' to close app): "
+                   input <- getStr
+                   mi <- menuInput as input
+                   case mi of
+                        ExitMenu => putStrLn "Thanks for playing"
+                        InvalidMCmd => menuLoop as
+                        NewGame => do gameLoop as
+                                      displayScore as
+                                      menuLoop as
+
+  startApp : ST io () []
+  startApp = do putStrLn "Welcome to MNK!"
+                putStrLn ("Optional game modes:\n" ++
+                          "  mis (Misère): Usual winner and loser are reversed\n" ++
+                          "  wild (Wild): Both players can use X or O\n" ++
+                          "  cf (ConnectFour): Player's piece will go to the lowest\n" ++
+                          "                    position in the selected column\n" ++
+                          "  oc (Order&Chaos): 1st player (Order) tries to make a\n" ++
+                          "                    k-length row, while 2nd player (Chaos)\n" ++
+                          "                    tries to prevent this")
+                as <- launch
+                call (menuLoop as)
+                exit as
+
 main : IO ()
-main = do putStrLn "Welcome to MNK!"
-          putStrLn ("Optional game modes:\n" ++
-                    "  mis (Misère): Usual winner and loser are reversed\n" ++
-                    "  wild (Wild): Both players can use X or O\n" ++
-                    "  cf (ConnectFour): Player's piece will go to the lowest\n" ++
-                    "                    position in the selected column\n" ++
-                    "  oc (Order&Chaos): 1st player (Order) tries to make a\n" ++
-                    "                    k-length row, while 2nd player (Chaos)\n" ++
-                    "                    tries to prevent this")
-          run forever initialGame enterValues
-          pure ()
+main = run startApp
+
+-- Local Variables:
+-- idris-load-packages: ("prelude" "contrib" "base")
+-- End:
