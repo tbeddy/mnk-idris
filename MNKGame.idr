@@ -285,6 +285,22 @@ createPlayers False False True
   = ((MkPlayer "X" (SX .+. (SP X))),
      (MkPlayer "O" (SX .+. (SP O))))
 
+createPlayer1 : (orderchaos, wild, connectfour : Bool) -> Player
+createPlayer1 True  _     False = (MkPlayer "Order" (SX .+. SY .+. SPiece))
+createPlayer1 True  _     True = (MkPlayer "Order" (SX .+. SPiece))
+createPlayer1 False True  False = (MkPlayer "P1" (SX .+. SY .+. SPiece))
+createPlayer1 False True  True = (MkPlayer "P1" (SX .+. SPiece))
+createPlayer1 False False False = (MkPlayer "X" (SX .+. SY .+. (SP X)))
+createPlayer1 False False True = (MkPlayer "X" (SX .+. (SP X)))
+
+createPlayer2 : (orderchaos, wild, connectfour : Bool) -> Player
+createPlayer2 True  _     False = (MkPlayer "Chaos" (SX .+. SY .+. SPiece))
+createPlayer2 True  _     True = (MkPlayer "Chaos" (SX .+. SPiece))
+createPlayer2 False True  False = (MkPlayer "P2" (SX .+. SY .+. SPiece))
+createPlayer2 False True  True = (MkPlayer "P2" (SX .+. SPiece))
+createPlayer2 False False False = (MkPlayer "O" (SX .+. SY .+. (SP O)))
+createPlayer2 False False True = (MkPlayer "O" (SX .+. (SP O)))
+
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
