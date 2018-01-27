@@ -304,13 +304,6 @@ createPlayer2 False False True = (MkPlayer "O" (SX .+. (SP O)))
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
-createNewGame : (m, n, k : Nat) -> (mis, wild, cf, oc : Bool) ->
-                (prfm : LTE k m) -> (prfn : LTE k n) ->
-                GameState
-createNewGame m n k mis wild cf oc prfm prfn =
-  (MkGameState (emptyBoard m n) k (MkRules mis wild cf oc)
-               (createPlayers cf wild oc) prfm prfn)
-
 lteMNK : (m, n, k : Nat) -> Maybe (LTE k m, LTE k n)
 lteMNK m n k = case isLTE k m of
                     (No contra) => Nothing
