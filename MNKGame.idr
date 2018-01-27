@@ -304,15 +304,6 @@ createPlayer2 False False True = (MkPlayer "O" (SX .+. (SP O)))
 emptyBoard : (m, n : Nat) -> Board m n
 emptyBoard m n = replicate n (replicate m Nothing)
 
-lte33 : LTE 3 3
-lte33 = LTESucc (LTESucc (LTESucc LTEZero))
-
-initialGame : GameState
-initialGame = (MkGameState (emptyBoard 3 3) 3
-                           (MkRules False False False False)
-                           (createPlayers False False False)
-                           lte33 lte33)
-
 createNewGame : (m, n, k : Nat) -> (mis, wild, cf, oc : Bool) ->
                 (prfm : LTE k m) -> (prfn : LTE k n) ->
                 GameState
