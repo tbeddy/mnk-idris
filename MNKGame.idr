@@ -193,13 +193,20 @@ allRowEq (x :: xs@(y :: ys)) = if isJust x && x == y
                                   else False
 
 ||| If there any game winning lines, return that line's piece
-anyWinningLines : (k : Nat) -> Board (k + mrest) (k + nrest) -> Bool
-anyWinningLines Z xs = False
-anyWinningLines (S j) xs = checkLines (allLines (S j) xs)
+anyWinningLines' : (k : Nat) -> Board (k + mrest) (k + nrest) -> Bool
+anyWinningLines' Z xs = False
+anyWinningLines' (S j) xs = checkLines (allLines (S j) xs)
   where
     checkLines : List (Row (S j)) -> Bool
     checkLines [] = False
     checkLines (x :: xs) = if allRowEq x then True else checkLines xs
+
+anyWinningLines : (m, n, k : Nat) -> (newbrd : Board m n) ->
+                  (prfm : LTE k m) -> (prfn : LTE k n) ->
+                  Bool
+anyWinningLines m n k newbrd prfm prfn
+  = anyWinningLines' {mrest = m - k} {nrest = n - k}
+                     k (plusMinusProof prfn (map (plusMinusProof prfm) newbrd))
 
 addPiece' : Piece -> (x : Fin m) -> (y : Fin n) -> Board m n -> Board m n
 addPiece' pce x FZ (z :: zs) = (replaceAt x (Just pce) z) :: zs
